@@ -1,0 +1,10 @@
+---
+
+nginx_revproxy_sites:                                         # List of sites to reverse proxy
+  tamojunto.solutions:                                                # Domain name
+    client_max_body_size: "256M"
+    proxy_read_timeout: "360"
+    domains:                                                  # List of server_name aliases
+      - www.tamojunto.solutions
+    upstreams:                                                # List of Upstreams
+      - {backend_address: 165.232.97.50, backend_port: 80}
