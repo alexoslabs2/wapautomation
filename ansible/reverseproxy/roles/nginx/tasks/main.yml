@@ -1,0 +1,64 @@
+---
+- name: Install Nginx
+  apt:
+    name:
+      - nginx
+    state: latest
+    update_cache: yes
+
+- name: Set up nginx directories
+  file:
+    path: "/etc/nginx/{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: 0640
+  with_items:
+    - sites-available
+    - sites-enabled
+  tags:
+    - nginxrevproxy
+
+- name: Set up POST method logs
+  blockinfile: 
+    path: /etc/nginx/nginx.conf
+    insertafter: "http {"  
+    block: |
+      log_format post_logs '$remote_addr - $remote_user [$time_local] "$request" $status'
+      '$body_bytes_sent "$http_referer"'
+      '"$http_user_agent" [$request_body]';
+
+- name: Add Site Config
+  template:
+    src: reverseproxy.conf.j2
+    dest: /etc/nginx/sites-available/{{ item.key }}.conf
+    owner: root
+    group: root
+    mode: 0640
+  with_dict: "{{ nginx_revproxy_sites }}"
+  notify: Reload Nginx
+  register:
+    siteconfig
+
+- name: Get Active Sites
+  command: ls -1 /etc/nginx/sites-enabled/
+  changed_when: "active.stdout_lines != nginx_revproxy_sites.keys()|sort()"
+  check_mode: false
+  register: active
+  tags:
+    - nginxrevproxy
+
+- name: De-activate Sites
+  file:
+    path: /etc/nginx/sites-enabled/{{ item }}
+    state: absent
+  with_items: "{{ active.stdout_lines }}"
+  notify: Reload Nginx
+
+- name: Enable Site Config
+  file:
+    src: /etc/nginx/sites-available/{{ item.key }}.conf
+    dest: /etc/nginx/sites-enabled/{{ item.key }}
+    state: link
+  with_dict: "{{ nginx_revproxy_sites }}"
+  notify: Reload Nginx
