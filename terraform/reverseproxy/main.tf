@@ -15,5 +15,5 @@ provider "digitalocean" {
 }
 
 data "digitalocean_ssh_key" "terraform" {
-  name = "Work"
+  name = "Inform your SSH key name on Digital Ocean"
 }
