@@ -1,7 +1,0 @@
-resource "digitalocean_record" "www" {
-  domain = "tamojunto.solutions" 
-  type   = "A"
-  name   = "www"
-  value  = digitalocean_droplet.webapp.ipv4_address
-}
-
