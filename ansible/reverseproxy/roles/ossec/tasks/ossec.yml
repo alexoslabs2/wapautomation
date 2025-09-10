@@ -1,22 +1,37 @@
 ---
-
 - name: Install OSSEC dependencies
   apt:
-   name:
-    - build-essential
-    - make
-    - zlib1g-dev
-    - libpcre2-dev
-    - libssl-dev
-    - python3-pip
-    - libsystemd-dev  
-    - git
-   state: latest
-   update_cache: yes
+    name:
+      - build-essential
+      - make
+      - zlib1g-dev
+      - libpcre2-dev
+      - libssl-dev
+      - python3-pip
+      - python3-venv
+      - libsystemd-dev
+      - git
+    state: present
+    update_cache: yes
+  become: true
 
-- name: Install pexpect
-  pip:
-     name: pexpect
+- name: Ensure pip3 is available
+  ansible.builtin.command: which pip3
+  register: pip3_path
+  changed_when: false
+  failed_when: pip3_path.rc != 0
+
+#- name: Install pexpect (via pip3)
+#  pip:
+#    name: pexpect
+#    executable: pip3
+#  become: true
+
+- name: Install pexpect from system packages
+  apt:
+    name: python3-pexpect
+    state: present
+    update_cache: yes
   become: true
 
 - name: (OSSEC) Check if OSSEC is already installed
@@ -36,20 +51,20 @@
     command: "/bin/bash /opt/ossec-hids/install.sh"
     timeout: 300
     responses:
-      en/br: "en"
-      Press ENTER: ""
-      What kind of installation do you want: "{{ ossec_install_type }}"
-      Choose where to install the OSSEC HIDS: "{{ ossec_dir }}"
-      Do you want e-mail notification: "{{ ossec_email }}"
-      e-mail address: "{{ ossec_email_address }}"
-      Do you want to use it: "{{ ossec_detected_smtp_use }}"
-      SMTP server ip: "{{ ossec_smtp_server }}"
-      Do you want to run the integrity check daemon: "{{ ossec_integritycheck_daemon }}"
-      Do you want to run the rootkit detection engine: "{{ ossec_rootkit_engine }}"
-      Do you want to enable active response: "{{ ossec_active_response }}"
-      Do you want to enable the firewall-drop response: "{{ ossec_firewalldrop_response }}"
-      Do you want to add more IPs to the white list: "n"
-  become: yes
+      'en/br': "en"
+      'Press ENTER': ""
+      'What kind of installation do you want': "{{ ossec_install_type }}"
+      'Choose where to install the OSSEC HIDS': "{{ ossec_dir }}"
+      'Do you want e-mail notification': "{{ ossec_email }}"
+      'e-mail address': "{{ ossec_email_address }}"
+      'Do you want to use it': "{{ ossec_detected_smtp_use }}"
+      'SMTP server ip': "{{ ossec_smtp_server }}"
+      'Do you want to run the integrity check daemon': "{{ ossec_integritycheck_daemon }}"
+      'Do you want to run the rootkit detection engine': "{{ ossec_rootkit_engine }}"
+      'Do you want to enable active response': "{{ ossec_active_response }}"
+      'Do you want to enable the firewall-drop response': "{{ ossec_firewalldrop_response }}"
+      'Do you want to add more IPs to the white list': "n"
+  become: true
   notify: restart ossec
   when: not ossec.stat.exists
   register: ossecinstall
@@ -74,15 +89,16 @@
   expect:
     command: "/bin/bash /opt/ossec-hids/install.sh"
     responses:
-      en/br: "en"
-      Press ENTER: ""
-      Do you want to update it: "y"
-      Do you want to update the rules: "y"
+      'en/br': "en"
+      'Press ENTER': ""
+      'Do you want to update it': "y"
+      'Do you want to update the rules': "y"
   notify: restart ossec
-  become: yes
+  become: true
   when: ossec.stat.exists and gitupdate is changed
 
 - name: (OSSEC) Start OSSEC service
   service:
     name: ossec
     state: started
+
