@@ -1,11 +1,8 @@
----
-
 # Perform setup step; set false to disable
-letsencrypt_setup: True
+letsencrypt_setup: true
 
 # Set the email address associated with the Let's Encrypt account
-#letsencrypt_account_email: ""
-letsencrypt_account_email: "exemple@domain.com"
+letsencrypt_account_email: "alexos@sparsesecurity.com.br"
 
 # Default authenticator for the HTTP challenge ('webroot' or 'apache')
 letsencrypt_http_auth: nginx
@@ -14,29 +11,28 @@ letsencrypt_http_auth: nginx
 letsencrypt_webroot_path: /var/www
 
 # Install the DNS challenge helper script and DNS update key
-letsencrypt_dns_challenge: False
+letsencrypt_dns_challenge: false
 
 # Create system group 'letsencrypt' for access to certificates
-letsencrypt_group: yes
+letsencrypt_group: true
 
 # Reuse private key at certificate renewal?
-letsencrypt_reuse_key: False
+letsencrypt_reuse_key: false
 
 # Allow subset of names?
-letsencrypt_subset_names: True
+letsencrypt_subset_names: true
 
 # Set global extra commandline options for certbot
-#letsencrypt_opts_extra: ""
-
 letsencrypt_opts_extra: "--register-unsafely-without-email"
+
 letsencrypt_cert:
-  name: example.com 
+  name: dataleakhunter.com
   domains:
-    - example.com.br
+    - www.dataleakhunter.com
   challenge: http
   http_auth: nginx 
   services:
-    -nginx 
+    - nginx
 
 # Set path for letsencrypt directory (no trailing "/" !!)
 letsencrypt_directory: /etc/letsencrypt
