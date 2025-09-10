@@ -1,38 +1,108 @@
-# Perform setup step; set false to disable
-letsencrypt_setup: true
+---
+- name: Prepare authenticator options for nginx
+  ansible.builtin.set_fact:
+    letsencrypt_opt_http_auth: "--nginx"
+  when: letsencrypt_cert.http_auth | default(letsencrypt_http_auth) == 'nginx'
 
-# Set the email address associated with the Let's Encrypt account
-letsencrypt_account_email: "alexos@sparsesecurity.com.br"
+- name: Prepare cert name option
+  ansible.builtin.set_fact:
+    letsencrypt_opt_cert_name: "--cert-name {{ letsencrypt_cert.name }}"
+  when: letsencrypt_cert.name is defined and letsencrypt_cert.name | length > 0
 
-# Default authenticator for the HTTP challenge ('webroot' or 'apache')
-letsencrypt_http_auth: nginx
+- name: Prepare optional test cert option
+  ansible.builtin.set_fact:
+    letsencrypt_opt_test_cert: "{{ letsencrypt_test | default(false) | ternary('--test-cert', '') }}"
 
-# Default webroot path for the authenticator 'webroot'
-letsencrypt_webroot_path: /var/www
+- name: Prepare reuse-key option
+  ansible.builtin.set_fact:
+    letsencrypt_opt_reuse_key: "{{ letsencrypt_cert.reuse_key | default(letsencrypt_reuse_key) | ternary('--reuse-key', '') }}"
 
-# Install the DNS challenge helper script and DNS update key
-letsencrypt_dns_challenge: false
+- name: Prepare allow-subset-of-names option
+  ansible.builtin.set_fact:
+    letsencrypt_opt_allow_subset_of_names: "{{ letsencrypt_cert.subset_names | default(letsencrypt_subset_names) | ternary('--allow-subset-of-names', '') }}"
 
-# Create system group 'letsencrypt' for access to certificates
-letsencrypt_group: true
+- name: "Prepare post-hook options #1"
+  ansible.builtin.set_fact:
+    letsencrypt_opt_post_hook: "--post-hook '{{ letsencrypt_cert.post_hook }}'"
+  when: letsencrypt_cert.post_hook is defined and letsencrypt_cert.post_hook | length > 0
 
-# Reuse private key at certificate renewal?
-letsencrypt_reuse_key: false
+- name: "Prepare post-hook options #2"
+  ansible.builtin.set_fact:
+    letsencrypt_opt_post_hook: "--post-hook 'systemctl restart {{ letsencrypt_cert.services | join(' ') }}'"
+  when:
+    - letsencrypt_cert.post_hook is not defined or letsencrypt_cert.post_hook | length == 0
+    - letsencrypt_cert.services is defined and letsencrypt_cert.services | length > 0
+    - letsencrypt_cert_use_post_hook_for_service_restart | default(true)
+    - not letsencrypt_cert_use_deploy_hook_for_service_restart | default(false)
 
-# Allow subset of names?
-letsencrypt_subset_names: true
+- name: "Prepare deploy-hook options #1"
+  ansible.builtin.set_fact:
+    letsencrypt_opt_deploy_hook: "--deploy-hook '{{ letsencrypt_cert.deploy_hook }}'"
+  when: letsencrypt_cert.deploy_hook is defined and letsencrypt_cert.deploy_hook | length > 0
 
-# Set global extra commandline options for certbot
-letsencrypt_opts_extra: "--register-unsafely-without-email"
+- name: "Prepare deploy-hook options #2"
+  ansible.builtin.set_fact:
+    letsencrypt_opt_deploy_hook: "--deploy-hook 'systemctl restart {{ letsencrypt_cert.services | join(' ') }}'"
+  when:
+    - letsencrypt_cert.deploy_hook is not defined or letsencrypt_cert.deploy_hook | length == 0
+    - letsencrypt_cert.services is defined and letsencrypt_cert.services | length > 0
+    - not letsencrypt_cert_use_post_hook_for_service_restart | default(true)
+    - letsencrypt_cert_use_deploy_hook_for_service_restart | default(false)
 
-letsencrypt_cert:
-  name: dataleakhunter.com
-  domains:
-    - www.dataleakhunter.com
-  challenge: http
-  http_auth: nginx 
-  services:
-    - nginx
+- name: "Prepare renew-hook options"
+  ansible.builtin.set_fact:
+    letsencrypt_opt_renew_hook: "--renew-hook '{{ letsencrypt_cert.renew_hook }}'"
+  when: letsencrypt_cert.renew_hook is defined and letsencrypt_cert.renew_hook | length > 0
 
-# Set path for letsencrypt directory (no trailing "/" !!)
-letsencrypt_directory: /etc/letsencrypt
+- name: Register Let's Encrypt certificate with HTTP challenge
+  ansible.builtin.command: >
+    certbot 
+    {{ letsencrypt_opt_http_auth | default() }}
+    {{ letsencrypt_opt_cert_name | default() }}
+    {{ letsencrypt_opt_test_cert | default() }}
+    {{ letsencrypt_opt_reuse_key | default() }}
+    {{ letsencrypt_cert.opts_extra | default(letsencrypt_opts_extra | default()) }}
+    --domains {{ letsencrypt_cert.domains | join(',') }}
+    --keep-until-expiring --expand
+    {{ letsencrypt_opt_allow_subset_of_names | default() }}
+    --non-interactive --agree-tos
+    {{ letsencrypt_opt_post_hook | default() }}
+    {{ letsencrypt_opt_deploy_hook | default() }}
+    {{ letsencrypt_opt_renew_hook | default() }}
+  when: letsencrypt_cert.challenge | default() == 'http' and
+        letsencrypt_cert.domains is defined and
+        letsencrypt_cert.domains | length > 0
+  register: letsencrypt_reg_certbot_http
+  changed_when: not "no action taken" in letsencrypt_reg_certbot_http.stdout
+
+- name: Read in system users
+  ansible.builtin.command: "cut -d: -f1 /etc/passwd"
+  register: letsencrypt_reg_system_users
+  changed_when: false
+
+- name: Add users to letsencrypt system group
+  ansible.builtin.user:
+    name: "{{ item }}"
+    groups: letsencrypt
+    append: yes
+  with_items: "{{ letsencrypt_cert.users | default([]) }}"
+  when: letsencrypt_cert.users is defined and
+        letsencrypt_cert.users | length > 0 and
+        item in letsencrypt_reg_system_users.stdout_lines | default([])
+
+- name: Allow group
+  when: letsencrypt_group | default(false)
+  block:
+    - name: Get information about private key
+      ansible.builtin.stat:
+        path: "{{ letsencrypt_directory }}/live/{{ letsencrypt_cert.name }}/privkey.pem"
+      register: privkey
+
+    - name: Ensure letsencrypt group can read private key
+      ansible.builtin.file:
+        path: "{{ privkey.stat.lnk_source | default(privkey.stat.path) }}"
+        owner: root
+        group: letsencrypt
+        mode: '0640'
+      when: privkey.stat.exists
+
